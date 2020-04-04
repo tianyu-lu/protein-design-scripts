@@ -1,0 +1,243 @@
+# Command history
+
+  624  gmx pdb2gmx -h
+  625  gmx pdb2gmx -f complex.pdb -o complex_md.pdb -p complex.top -water tip3p -ignh 
+  641  gmx editconf -f complex_md.pdb -o complex_box.pdb -center 8.8 4.5 3.75  -box 13.98 9 7.5
+  642  vmd complex_box2.pdb
+
+  ====================================================================================================
+
+  440  gedit complex.pdb
+  441  gedit complex.top complex_Protein_chain_A.itp
+  442  gedit complex_md.pdb
+
+  444  gmx editconf -c -f complex_md.pdb -bt cubic -d 1.0 -o complex_box.pdb 
+
+  453  gmx solvate -cs -cp complex_box.pdb -p complex.top -o complex_sol.pdb 
+
+  464  gmx grompp -f step6.0_minimization.mdp -c complex_sol.pdb -p complex.top -o complex_sol_em.tpr
+
+  466  gmx genion -s complex_sol_em.tpr -p complex.top -o complex_box_sol_ion.pdb -pname NA -nname CL -conc 0.1 -neutral 
+
+  469  gmx grompp -f step6.0_minimization.mdp -c complex_box_sol_ion.pdb -p complex.top -o em.tpr
+
+  472  gmx mdrun -v -s -deffnm complex_sol_ion_em
+
+  478  gmx make_ndx -f index_test.pdb -o 
+
+  482  gmx grompp -f nvt.mdp -c complex_sol_ion_em.gro -p complex_sol.top -o complex_nvt 
+  483  gmx grompp -f nvt.mdp -c complex_sol_ion_em.gro -p complex_sol.top -n -o complex_nvt 
+
+  485  gmx mdrun -v -s -deffnm complex_nvt
+
+  ====================================================================================================
+  ___________________________________________
+  | MD Simulation Commands (AMBER99SB-ILDN) |
+
+  grep -v HOH complex.pdb > complex_clean.pdb
+  gmx pdb2gmx -f complex_clean.pdb -o complex_md.pdb -p complex.top -water tip3p -ignh
+  gmx editconf -f complex_md.pdb -o complex_box.pdb -center 6.3 7.6 4.8  -box 12.4 12.3 8.5
+  gmx editconf -f complex_md.pdb -o complex_box.pdb -center 3.0 3.3 3.2  -box 6.9 6.9 6.9   # wildtype petase
+  gmx editconf -f complex_md.pdb -o complex_box.pdb -center 4.0 4.8 3.8  -box 7.9 9.2 7.5   # mutant petase
+  gmx solvate -cp complex_box.pdb -cs -o complex_solv.pdb -p complex.top
+  gmx grompp -f step6.0_minimization.mdp -c complex_solv.pdb -p complex.top -o complex_sol_em.tpr -maxwarn 1
+  gmx genion -s complex_sol_em.tpr -o complex_solv_ion.gro -p complex.top -pname NA -nname CL -conc 0.1 -neutral
+  gmx grompp -f step6.0_minimization.mdp -c complex_solv_ion.gro -p complex.top -o em.tpr
+  gmx mdrun -v -s -deffnm em
+  gmx energy -f em.edr -o potential.xvg
+  gmx make_ndx -f em.gro -o
+  gmx grompp -f nvt.mdp -c em.gro -r em.gro -p complex.top -n -o nvt.tpr
+  gmx mdrun -v -s -deffnm nvt
+  gmx energy -f nvt.edr -o temperature.xvg
+  gmx grompp -f npt.mdp -c nvt.gro -r nvt.gro -t nvt.cpt -p complex.top -n -o npt.tpr
+  gmx mdrun -v -s -deffnm npt
+  gmx energy -f npt.edr -o pressure.xvg
+  gmx energy -f npt.edr -o density.xvg
+  gmx grompp -f production.mdp -c npt.gro -t npt.cpt -p complex.top -o md_0_1.tpr
+  gmx mdrun -v -s -deffnm md_0_1
+  ____________
+  | Analysis |
+
+  gmx make_ndx -n -f nvt.tpr -o
+  gmx trjconv -s md_0_1.tpr -f md_0_1.xtc -n -o md_0_1_noPBC.xtc -pbc mol -center
+  gmx trjconv -s md_0_1.tpr -f md_0_1_noPBC.xtc -n -center -fit rot+trans -o traj.xtc
+  gmx rms -s md_0_1.tpr -f -n -tu ns -o rms.xvg
+
+  ====================================================================================================
+
+Niagara Cluster
+
+#!/bin/bash
+#SBATCH --nodes=16               # number of nodes
+#SBATCH --ntasks-per-node=10     # request 10 MPI tasks per node
+#SBATCH --cpus-per-task=4        # 4 OpenMP threads per MPI task => total: 10 x 4 = 40 CPUs/node
+#SBATCH --mem=0                  # request all available memory on the node
+#SBATCH --job-name=mdrun
+#SBATCH --time=0-01:00           # time limit (D-HH:MM)
+#SBATCH --mail-user=domain@email.com
+#SBATCH --mail-type=BEGIN
+#SBATCH --mail-type=END
+#SBATCH --mail-type=FAIL
+#SBATCH --mail-type=REQUEUE
+#SBATCH --mail-type=ALL
+
+module purge --force
+module load CCEnv
+module load StdEnv/2018.3
+module load gcc/7.3.0  openmpi/3.1.2  gromacs/2019.3
+export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
+
+srun gmx_mpi grompp -f nvt.mdp -c em.gro -r em.gro -p complex.top -o nvt.tpr
+srun gmx_mpi mdrun -deffnm nvt
+srun gmx_mpi grompp -f npt.mdp -c nvt.gro -r nvt.gro -t nvt.cpt -p complex.top -o npt.tpr
+srun gmx_mpi mdrun -deffnm npt
+srun gmx_mpi grompp -f production.mdp -c npt.gro -t npt.cpt -p complex.top -o md_0_1.tpr
+srun gmx_mpi mdrun -deffnm md
+
+======================================================================================================
+
+Analysis
+
+Save the first frame: 
+gmx trjconv -s md_0_1.tpr -f traj.xtc -n -fit rot+trans -tu ns -e 0 -o complex_0ns.pdb
+
+gmx trjconv -s -f traj_pbc_nojump.xtc -n -center -pbc nojump -o traj_pbc_mol.xtc
+gmx trjconv -s md_0_1.tpr -f md_0_1_noPBC.xtc -n -center -fit rot+trans -o traj_fit.xtc
+ln -s traj_fit.xtc traj.xtc
+gmx rms -s md_0_1.tpr -f -n -tu ns -o rms.xvg
+gmx rmsf -s -f traj.xtc -n -res -o rmsf.xvg
+gmx hbond -s -f traj_fit.xtc -n -num -g -hbm -hbn
+gmx select -s -f -n -tu ns -selrpos atom -seltype res_com -select 'group "myc_max" and same residue as within 0.4 of group "dna_mimic"' -os -oc -oi -on test.ndx -om -of -ofpdb -olt
+____________
+|Clustering|
+
+gmx cluster -s -f -n -o -g -dist -ev -conv -sz -tr -ntr -clid -cl -clndx -cutoff 0.1 -method gromos
+gmx trjconv -s -n -f clusters.pdb -sep -o frame.pdd
+___________________
+|Sequence Analysis|
+# make general resfile for the full protein
+python findDuplicatesFasta.py -Sfasta ${file_wo_extension}_clean.fasta
+python2.7 design_analysis.py -n ${file_wo_extension}.pdb --title design --res analysis.resfile --prefix *design_backrub_rep1*.pdb
+sort -n -k6 ${scorefile}.fasc | head -n 100 | awk '{print $NF}' > best_100.txt
+./picking_best_models.sh
+
+___________________
+|Pooled Structures|
+Find and replace using sed
+sed -i 's/frame/125_frame/g' 125_rep1.fasc
+
+____________________________________________
+|Extract sequences from designed structures|
+
+python /home/lutian5/Documents/Rosetta/rosetta_bin_linux_3.11_bundle/rosetta_bin_linux_2019.35.60890_bundle/tools/protein_tools/scripts/design_analysis/design_analysis.py --prefix des_analysis --res ../cluster1.resfile --native cluster1_relax.pdb *design*pdb
+
+PyMol
+Get residues from pdb: print cmd.get_fastastr('all')
+
+Count number of files in directory:
+ls -1 | wc -l
+
+Extract all tar.gz files:
+ls *.gz |xargs -n1 tar -xzf
+
+Concatenate files with newline in between each one
+for f in *.fasc; do (cat "${f}"; echo) >> unbiased_scores_concat.fasc; done
+
+Keep second char to end of line
+cut -c 2- best_sequences.txt | sed -n 'p;n' > unique_structures_codes.txt
+
+Rename frame0_0001 for L125 mutants
+for file in cluster1_relax_design*; do suffix=${file:35:8}; newname=frame0_0001_design_backrub_rep2_${suffix}; mv $file $newname; done
+
+Extract sequences from .pdb files
+python2.7 design_analysis.py -n --title pool_125 --res union.resfile --prefix *design_backrub_rep*.pdb
+for file in frame*; do cd ${file}/unbiased_structures; cp unbiased_scores.fasc ../../unbiased_scores/${file}.fasc; cd ../..; done
+for f in *.fasc; do (cat "${f}"; echo) >> unbiased_scores_concat.fasc; done
+sort -n -k7 unbiased_scores_concat.fasc > sorted_scores.fasc
+while read -r code; do cp ../${code}.pdb .; done < top_20_perc.txt
+
+__________________________________________________________________________________________
+|Code to pool all designs, remove duplicates, generate energy graph and sorted score file|
+
+
+log_> Total charge of state A =  8.0
+log_> Total charge of state B =  7.0
+
+__________________________
+|Free Energy Calculations|
+
+gmx pdb2gmx -f complex.pdb -o complex_gromacs.pdb -p complex.top -ff charmm36mut -water tip3p -ignh
+python /home/lutian5/scratch/work/free_energy/pmx/pmx/scripts/mutate.py -f complex_gromacs.pdb -o /home/lutian5/scratch/work/iGEM/free_energy/dimi4/complex_dimi4.pdb -ff charmm36mut.ff
+gmx pdb2gmx -f complex_dimi4.pdb -p complex_mut.top -o hybrid.gro  -ff charmm36mut -water tip3p -i complex_mut_posre
+/home/lutian5/scratch/work/free_energy/pmx/pmx/scripts/generate_hybrid_topology.py -p complex_mut.top -itp complex_mut_posre.itp -o hybrid.itp -ff charmm36mut -log bstate.log   # don't include -itp for single chain proteins
+mkdir runA.1 runB.1
+gmx editconf -f hybrid.gro -o hybrid_box.gro -center 6.3 7.6 4.8  -box 12.4 12.3 8.5   # for complex
+gmx editconf -f hybrid.gro -o hybrid_box.gro -center 6.3 3.9 3.4  -box 12.0 7.3 7.0    # for receptor
+ln -s complex_mut.top topol.top
+gmx solvate -cs -cp hybrid_box.gro -p -o hybrid_box_sol.gro
+gmx grompp -f runA.1/emA.mdp -c hybrid_box_sol.gro -p -o hybrid_em.tpr -maxwarn 2
+mkdir to_ions
+# gmx genion -s hybrid_em.tpr -p -pname NA -nname CL -conc 0.1 -neutral -o hybrid_sol_ion.pdb
+gmx genion -s hybrid_box_sol.gro -p -pname NA -nname CL -conc 0.1 -neutral -o hybrid_sol_ion.pdb
+cp hybrid_sol_ion.pdb to_ions/
+cd to_ions/
+gmx pdb2gmx -f hybrid_sol_ion.pdb -p complex.top -o  -ff charmm36mut -water tip3p -i complex_posre
+cp complex_Ion2.itp ../
+cd ..
+gmx grompp -f runA.1/emA.mdp -c hybrid_sol_ion.pdb -p -o runA.1/complex_dimi4_emA.tpr -maxwarn 2
+gmx grompp -f runB.1/emB.mdp -c hybrid_sol_ion.pdb -p -o runB.1/complex_dimi4_emB.tpr -maxwarn 2
+
+cd runA.1/
+srun gmx_mpi mdrun -v -s -deffnm complex_dimi4_emA
+cd ../runB.1
+srun gmx_mpi mdrun -v -s -deffnm complex_dimi4_emB
+cd ..
+srun gmx_mpi grompp -f runA.1/eqA.mdp -c runA.1/complex_dimi4_emA.gro -p -o runA.1/complex_dimi4_eqA.tpr -maxwarn 2
+srun gmx_mpi grompp -f runB.1/eqB.mdp -c runB.1/complex_dimi4_emB.gro -p -o runB.1/complex_dimi4_eqB.tpr -maxwarn 2
+srun gmx_mpi mdrun -v -s -deffnm complex_dimi4_eqA
+cd ../runB.1
+srun gmx_mpi mdrun -v -s -deffnm complex_dimi4_eqB
+cd ..
+
+gmx pdb2gmx -f receptor.pdb -o receptor_gromacs.pdb -p receptor.top -ff charmm36mut -water tip3p -ignh
+python /home/lutian5/Documents/Code/pmx/pmx/scripts/mutate.py -f /home/lutian5/Documents/Design/FreeEnergy/on_cluster/free_energy/132_dimi4/receptor/receptor_gromacs.pdb -o /home/lutian5/Documents/Design/FreeEnergy/on_cluster/free_energy/132_dimi4/receptor/receptor_dimi4.pdb -ff charmm36mut.ff
+gmx pdb2gmx -f receptor_dimi4.pdb -p receptor_mut.top -o hybrid.gro  -ff charmm36mut -water tip3p -i receptor_mut_posre
+/home/lutian5/Documents/Code/pmx/pmx/scripts/generate_hybrid_topology.py -p receptor_mut.top -o hybrid.itp -ff charmm36mut -log bstate.log
+#### /home/lutian5/Documents/Code/pmx/pmx/scripts/generate_hybrid_topology.py -p receptor_mut.top -itp receptor_mut_posre.itp -o hybrid.itp -ff charmm36mut -log bstate.log
+gmx editconf -f hybrid.gro -o hybrid_box.gro -center 6.3 3.9 3.4  -box 12.0 7.3 7.0
+ln -s receptor_mut.top topol.top
+gmx solvate -cs -cp hybrid_box.gro -p -o hybrid_box_sol.gro
+gmx grompp -f runA.1/emA.mdp -c hybrid_box_sol.gro -p -o hybrid_em.tpr -maxwarn 2
+
+gmx grompp -f runA.1/emA.mdp -c hybrid_sol_ion.pdb -p -o runA.1/receptor_dimi4_emA.tpr -maxwarn 2
+gmx grompp -f runB.1/emB.mdp -c hybrid_sol_ion.pdb -p -o runB.1/receptor_dimi4_emB.tpr -maxwarn 2
+gmx mdrun -v -s -deffnm receptor_dimi4_emA
+gmx mdrun -v -s -deffnm receptor_dimi4_emB
+
+gmx grompp -f runA.1/eqA.mdp -c runA.1/receptor_dimi4_emA.gro -p -o runA.1/receptor_dimi4_eqA.tpr -maxwarn 2
+gmx grompp -f runB.1/eqB.mdp -c runB.1/receptor_dimi4_emB.gro -p -o runB.1/receptor_dimi4_eqB.tpr -maxwarn 2
+gmx mdrun -v -s -deffnm receptor_dimi4_eqA
+gmx mdrun -v -s -deffnm receptor_dimi4_eqB
+
+______________________________
+|Analysis after Equilibration|
+
+python2.7 /home/lutian5/Documents/Code/pmx/pmx/scripts/prepare_crooks_runs_mod.py -d /home/lutian5/Documents/Design/FreeEnergy/sample_calculations/ligand_E5F -mdp tiA.mdp -sw_time 100
+python2.7 /home/lutian5/scratch/work/free_energy/free_energy/pmx/pmx/scripts/analyze_dhdl.py -fA runA.1/morphes/frame*/dhdl.xvg -fB runB.1/morphes/frame*/dhdl.xvg -t 310
+
+_____________________________
+|Modeller setup in ~/.bashrc|
+
+if [ -z $PYTHONPATH ]
+then
+    export PYTHONPATH="/home/lutian5/scratch/work/iGEM/modeller_v2/modeller_install_v2/lib/x86_64-intel8/python2.5/:/home/lutian5/scratch/work/iGEM/modeller_v2/modeller_install_v2/modlib/"
+else
+    export PYTHONPATH="${PYTHONPATH}:/home/lutian5/scratch/work/iGEM/modeller_v2/modeller_install_v2/lib/x86_64-intel8/python2.5:/home/lutian5/scratch/work/iGEM/modeller_v2/modeller_install_v2/modlib/"
+fi
+
+if [ -z $LD_LIBRARY_PATH ]
+then
+    export LD_LIBRARY_PATH="/home/lutian5/scratch/work/iGEM/modeller_v2/modeller_install_v2/lib/x86_64-intel8"
+else
+    export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/home/lutian5/scratch/work/iGEM/modeller_v2/modeller_install_v2/lib/x86_64-intel8"
+fi
