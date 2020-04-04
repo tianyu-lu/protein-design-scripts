@@ -1,0 +1,6 @@
+-linmem_ig 100						# limit memory to store rotamer pair interactions
+-use_input_sc						# Include rotamers from the input structure
+-ex1							# for rotamer packing
+-ex2
+-nstruct 2000						# Generate 2000 models
+

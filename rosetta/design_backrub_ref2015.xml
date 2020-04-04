@@ -1,0 +1,49 @@
+<ROSETTASCRIPTS>
+	<SCOREFXNS>
+	</SCOREFXNS>
+	<TASKOPERATIONS>
+		Include rotamer options from the command line
+		<InitializeFromCommandline name="ifcl" />
+                <ReadResfile name="rrf" filename="cluster1.resfile"/>
+	</TASKOPERATIONS>
+	<MOVERS>
+		Design the dmp19 interface
+                <PackRotamersMover name="design" scorefxn="REF2015" task_operations="ifcl,rrf" />
+
+                Analyze the resulting interface
+                <InterfaceAnalyzerMover name="analyze" scorefxn="REF2015" packstat="0" pack_input="0" pack_separated="1" interface="AB_C" />
+
+		Backrub motions of the dmp19
+		<Backrub name="backrub_motion" pivot_residues="1-163" />
+		<GenericMonteCarlo name="backrub" mover_name="backrub_motion" scorefxn_name="REF2015" trials="5000" temperature="1" recover_low="1" />
+	</MOVERS>
+	<FILTERS>
+		<Ddg name="ddG" scorefxn="REF2015" threshold="-15" repeats="2"/> binding energy calculation; an average of two repeats is computed for better numerical accuracy
+		<Sasa name="sasa" threshold="800"/> Buried surface area upon complex formation
+		<Rmsd name="rmsd" confidence="0"/> confidence=0 means that the filter will be evaluated but not used as an acceptance criterion
+		<CompoundStatement name="ddg_sasa"> combine filters into a single logical statement
+		<AND filter_name="ddG"/>
+		<AND filter_name="sasa"/>
+                </CompoundStatement>
+	</FILTERS>
+	<APPLY_TO_POSE>
+	</APPLY_TO_POSE>
+	<PROTOCOLS>
+		Run three rounds of design followed by backbone motion
+                <Add mover="design" />
+		<Add mover="backrub" />
+		
+		<Add mover="design" />
+		<Add mover="backrub" />
+		
+		<Add mover="design" />
+		<Add mover="backrub" />
+		<Add filter="ddG"/>
+		<Add filter="sasa"/>
+		<Add filter="rmsd"/>
+
+		Calculate interface metrics for the final sequence
+		<Add mover="analyze" />
+	</PROTOCOLS>
+	<OUTPUT scorefxn="REF2015" />
+</ROSETTASCRIPTS>
