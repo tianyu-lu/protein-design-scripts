@@ -109,123 +109,12 @@ def get_masif(fbase):
         save_ply(fbase+".ply", regular_mesh.vertices,\
                   regular_mesh.faces, normals=vertex_normal, charges=charges,\
                   normalize_charges=True, hbond=vertex_hbond, hphob=vertex_hphobicity)
-
-
-        ### 04-masif_precompute.py
-        params = masif_opts["ppi_search"]
-        input_feat, rho, theta, mask, neigh_indices, iface_labels, verts = read_data_from_surface(fbase+".ply", params)
-
-        np.save(fbase+'_rho_wrt_center', rho)
-        np.save(fbase+'_theta_wrt_center', theta)
-        np.save(fbase+'_input_feat', input_feat)
-        np.save(fbase+'_mask', mask)
-        np.save(fbase+'_list_indices', neigh_indices)
-        np.save(fbase+'_iface_labels', iface_labels)
-        # Save x, y, z
-        np.save(fbase+'_X.npy', verts[:,0])
-        np.save(fbase+'_Y.npy', verts[:,1])
-        np.save(fbase+'_Z.npy', verts[:,2])
-
-
-        ### masif_ppi_search_comp_desc.py
-
-        print("Reading pre-trained network")
-        from MaSIF_ppi_search import MaSIF_ppi_search
-
-        learning_obj = MaSIF_ppi_search(
-            params["max_distance"],
-            n_thetas=16,
-            n_rhos=5,
-            n_rotations=16,
-            idx_gpu="/gpu:0",
-            feat_mask=params["feat_mask"],
-        )
-        learning_obj.saver.restore(learning_obj.session, params["model_dir"] + "model")
-
-        from train_ppi_search import compute_val_test_desc
-
-        p1_rho_wrt_center = np.load(fbase+"_rho_wrt_center.npy")
-        p1_theta_wrt_center = np.load(fbase+"_theta_wrt_center.npy")
-        p1_input_feat = np.load(fbase+"_input_feat.npy")
-        p1_input_feat = mask_input_feat(p1_input_feat, params["feat_mask"])
-        p1_mask = np.load(fbase+"_mask.npy")
-        idx1 = np.array(range(len(p1_rho_wrt_center)))
-        desc1_str = compute_val_test_desc(
-            learning_obj,
-            idx1,
-            p1_rho_wrt_center,
-            p1_theta_wrt_center,
-            p1_input_feat,
-            p1_mask,
-            batch_size=1000,
-            flip=False,
-        )
-
-        np.save(fbase+"_desc_straight.npy", desc1_str)
         return 0
     except:
         return 1
 
-import multiprocessing as mp
-ncpus = int(os.environ.get('SLURM_CPUS_PER_TASK',default=1))
-pool = mp.Pool(processes=ncpus)
-flist = glob.glob("*.pdb")
-results = pool.map(get_masif, flist)
 
-
-
-import numpy as np
-import glob
-# do stage 1 of masif-ppi-search
-print("Stage 1 of MaSIF-ppi-search")
-
-ebox_desc = np.load("ebox_desc.npy")           # can subset this to make more efficient, search only at critical binding interfaces
-ebox_desc = [ebox_desc[274], ebox_desc[2333]]
-ebox_idx = np.load("ebox_list_indices.npy")
-matches = []
-database = glob.glob("*_desc_straight.npy")   # shape: (num_vertices, 80)
-database_np = np.array(database)
-K = 5
-for i, patch in enumerate(ebox_desc):
-    all_dists = []
-    for desc in database: 
-        desc_name = desc[:-18]
-        desc_idx = np.load(desc_name + "_list_indices.npy")
-        q = np.load(desc)
-        dists = np.linalg.norm(q - patch, axis=1)
-        min_idxs = np.argsort(dists)                          # could consider relaxing to best 3 or best K matches
-        min_dists = dists[min_idxs[:K]]
-        for md in min_dists:
-            all_dists.append(md)
-    best_match_idxs = np.floor_divide(np.argsort(np.array(all_dists)), K)         # same here
-    filenames = database_np[best_match_idxs]
-    for f in np.unique(filenames):
-        q = np.load(f)
-        dists = np.linalg.norm(q - patch, axis=1)
-        min_idxs = np.argsort(dists)[:K]
-        desc_name = f[:-18]
-        desc_idx = np.load(desc_name + "_list_indices.npy")
-        for mi in min_idxs:
-            matches.append((f, desc_idx[mi], dists[mi]))
-
-# map patch indices to resnames and resids
-import pickle
-out_text = ""
-for m in matches:
-    to_aa = np.load(m[0][:-18] + ".npy")
-    aas = to_aa[m[1]]
-    # aas = [a[0] for a in aas]
-    print("aas shape: ", aas.shape)
-    aas = set(list(aas.flatten()))
-    out_text += "Matching {}  ".format(m[0][:-18])
-    for aa in aas:
-        out_text += " {} ".format(aa.split('_')[1])
-    out_text += " {} \n".format(m[2])
-
-with open("results.out", 'w') as f:
-    f.write(out_text)
-
-print("MaSIF Search complete.")
-print("Deleting intermediate files...")
-
+for f in glob.glob("*.pdb"):
+    print(f)
+    get_masif(f)
 
